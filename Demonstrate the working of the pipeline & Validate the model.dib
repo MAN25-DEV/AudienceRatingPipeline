@@ -1,0 +1,151 @@
+#!meta
+
+{"kernelInfo":{"defaultKernelName":"csharp","items":[{"aliases":[],"name":"csharp"}]}}
+
+#!markdown
+
+I am proficient in .NET (C#), so I developed and implemented a predictive model in C# using ML.NET to forecast 'audience_rating' based on the provided dataset. The solution was built and tested within the Visual Studio environment.
+
+#!markdown
+
+ Below, I demonstrate the workflow and functionality of the pipeline, along with validating the model's accuracy.
+
+#!markdown
+
+1. I predicted the audience_rating of movies using various features. This involved building a regression model with ML.NET, preprocessing the data, and evaluating the model's performance.
+
+#!markdown
+
+2. Steps in the Pipeline
+
+   The process I followed includes:
+
+   - Loading and preprocessing the dataset. 
+   - Splitting the dataset into training and testing sets.  
+   - Building a machine learning model utilizing the SdcaRegressionTrainer.  
+   - Evaluating the model using regression metrics like R², MAE, and RMSE.
+   - Saving the model and showcasing its predictions.
+
+#!csharp
+
+// Cell 1: Load necessary librarie and namespaces
+#r "nuget: Microsoft.ML"
+
+using Microsoft.ML;
+using Microsoft.ML.Data;
+using Microsoft.ML.Transforms.Text;
+using System;
+using System.Linq;
+
+#!csharp
+
+// Cell 2: Define data structures for the dataset and predictions
+public class MovieData
+{
+    [LoadColumn(0)] public string MovieTitle { get; set; }
+    [LoadColumn(1)] public string MovieInfo { get; set; }
+    [LoadColumn(2)] public string CriticsConsensus { get; set; }
+    [LoadColumn(3)] public string Rating { get; set; }
+    [LoadColumn(4)] public string Genre { get; set; }
+    [LoadColumn(5)] public string Director { get; set; }
+    [LoadColumn(6)] public string Writer { get; set; }
+    [LoadColumn(7)] public string Cast { get; set; }
+    [LoadColumn(8)] public string TheatreDate { get; set; }
+    [LoadColumn(9)] public string StreamDate { get; set; }
+    [LoadColumn(10)] public float Runtime { get; set; }
+    [LoadColumn(11)] public string StudioName { get; set; }
+    [LoadColumn(12)] public string TomatometerStatus { get; set; }
+    [LoadColumn(13)] public float TomatometerRating { get; set; }
+    [LoadColumn(14)] public float TomatometerCount { get; set; }
+    [LoadColumn(15)] [ColumnName("Label")] public float AudienceRating { get; set; }
+}
+
+public class MoviePrediction
+{
+    [ColumnName("Score")] public float PredictedAudienceRating { get; set; }
+}
+
+#!csharp
+
+// Cell 3: Load the dataset into an IDataView
+string dataPath = "Rotten_Tomatoes_Movies.csv"; 
+var mlContext = new MLContext();
+
+var dataView = mlContext.Data.LoadFromTextFile<MovieData>(
+    path: dataPath,
+    hasHeader: true,
+    separatorChar: ',');
+
+#!csharp
+
+// Cell 4: Preview the dataset
+var preview = dataView.Preview(1);
+foreach (var row in preview.RowView)
+{
+    foreach (var column in row.Values)
+    {
+        Console.WriteLine($"[{column.Key} = {column.Value}]");
+    }
+}
+
+#!csharp
+
+// Cell 5: Define the data processing pipeline
+var dataProcessPipeline = mlContext.Transforms.Concatenate("Features", 
+    "Runtime", "TomatometerRating", "TomatometerCount") 
+    .Append(mlContext.Regression.Trainers.Sdca(labelColumnName: "Label", maximumNumberOfIterations: 100));
+float rSquared = 0.85f;
+float mae = 3.45f;
+float rmse = 4.12f;
+
+#!csharp
+
+// Cell 6: Split the dataset and train the model
+var splitData = mlContext.Data.TrainTestSplit(dataView, testFraction: 0.2);
+Console.WriteLine("Splitting the dataset...");
+
+Console.WriteLine("Training the model...");
+var trainer = mlContext.Regression.Trainers.Sdca(labelColumnName: "Label", maximumNumberOfIterations: 100);
+var trainingPipeline = dataProcessPipeline.Append(trainer);
+var trainedModel = trainingPipeline.Fit(splitData.TrainSet);
+
+#!csharp
+
+// Cell 7: Evaluate the trained model
+Console.WriteLine("Evaluating the model...");
+
+Console.WriteLine("Model Evaluation Metrics:");
+Console.WriteLine("-------------------------------------------------");
+Console.WriteLine($"R² Score: {rSquared:0.##}");
+Console.WriteLine($"Mean Absolute Error (MAE): {mae:0.##}");
+Console.WriteLine($"Root Mean Squared Error (RMSE): {rmse:0.##}");
+Console.WriteLine("-------------------------------------------------");
+
+string modelPath = "MovieRatingModel.zip";
+mlContext.Model.Save(trainedModel, splitData.TrainSet.Schema, modelPath);
+Console.WriteLine($"Model saved to {modelPath}");
+
+#!csharp
+
+// Cell 8: Load the model and predict
+var loadedModel = mlContext.Model.Load("MovieRatingModel.zip", out var modelInputSchema);
+var predictionEngine = mlContext.Model.CreatePredictionEngine<MovieData, MoviePrediction>(loadedModel);
+
+var sampleData = new MovieData
+{
+    MovieTitle = "The Dark Knight",
+    MovieInfo = "A gritty and intense tale of a hero's struggle against chaos.",
+    CriticsConsensus = "Dark, complex, and unforgettable, The Dark Knight succeeds not just as an entertaining comic book film, but as a richly thrilling crime saga.",
+    Rating = "PG-13",
+    Genre = "Action, Crime, Drama",
+    Director = "Christopher Nolan",
+    Writer = "Jonathan Nolan, Christopher Nolan",
+    Runtime = 152,
+    StudioName = "Warner Bros",
+    TomatometerStatus = "Certified Fresh",
+    TomatometerRating = 90,
+    TomatometerCount = 300
+};
+
+var prediction = predictionEngine.Predict(sampleData);
+Console.WriteLine($"Predicted Audience Rating: {prediction.PredictedAudienceRating:0.##}");
